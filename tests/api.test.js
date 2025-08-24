@@ -21,7 +21,7 @@ describe('API Health Check', () => {
     const response = await request(app)
       .get('/health')
       .expect(200);
-    
+
     expect(response.body).toBeDefined();
   });
 });
@@ -31,7 +31,7 @@ describe('Books API', () => {
     const response = await request(app)
       .get('/api/books')
       .expect(200);
-    
+
     expect(response.body).toHaveProperty('books');
     expect(Array.isArray(response.body.books)).toBe(true);
   });
@@ -42,8 +42,9 @@ describe('Authors API', () => {
     const response = await request(app)
       .get('/api/authors')
       .expect(200);
-    
+
     expect(response.body).toHaveProperty('authors');
     expect(Array.isArray(response.body.authors)).toBe(true);
   });
 });
+

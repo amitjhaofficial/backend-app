@@ -8,11 +8,11 @@ const password = process.env.DB_PASSWORD || '';
 const database = process.env.DB_NAME || 'react_node_app';
 
 const db = mysql.createConnection({
-   host: host,
-   port: port,
-   user: user,
-   password: password,
-   database: database
+  host: host,
+  port: port,
+  user: user,
+  password: password,
+  database: database,
 });
 
 module.exports = db;
