@@ -210,6 +210,9 @@ jobs:
     environment: production
     needs: [code-quality, security-scan, docker-security]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
     - name: Notify Slack - Deployment Started
