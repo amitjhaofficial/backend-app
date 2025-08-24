@@ -1,0 +1,333 @@
+name: Deploy Backend to ECS
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+    types: [opened, closed, ready_for_review, review_requested]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: book-author-dev-backend
+  ECS_SERVICE: book-author-dev-backend-service
+  ECS_CLUSTER: book-author-dev-cluster
+  ECS_TASK_DEFINITION: book-author-dev-backend
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run ESLint
+      run: npm run lint
+      continue-on-error: false
+
+    - name: Run unit tests
+      run: npm run test:coverage
+      continue-on-error: false
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage/lcov.info
+        fail_ci_if_error: false
+
+    - name: Notify Slack - Code Quality Failed
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":warning:",
+            "attachments": [{
+              "color": "warning",
+              "title": "⚠️ Backend Code Quality Checks Failed",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                {"title": "Check Type", "value": "Code Quality", "short": true},
+                {"title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Run npm audit
+      run: npm audit --audit-level=high
+      continue-on-error: true
+
+    - name: Run Snyk security scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+      continue-on-error: true
+
+  docker-security:
+    name: Docker Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build Docker image for scanning
+      run: docker build -t backend-security-scan .
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'backend-security-scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  notify-pr-events:
+    name: PR Notifications
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    
+    steps:
+    - name: Notify Slack - PR Opened
+      if: github.event.action == 'opened'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":gear:",
+            "attachments": [{
+              "color": "#ff7f0e",
+              "title": "🔄 New Backend PR Opened",
+              "title_link": "${{ github.event.pull_request.html_url }}",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Author", "value": "${{ github.event.pull_request.user.login }}", "short": true},
+                {"title": "Branch", "value": "${{ github.event.pull_request.head.ref }} → ${{ github.event.pull_request.base.ref }}", "short": true},
+                {"title": "Title", "value": "${{ github.event.pull_request.title }}", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Slack - PR Merged
+      if: github.event.action == 'closed' && github.event.pull_request.merged == true
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":white_check_mark:",
+            "attachments": [{
+              "color": "good",
+              "title": "✅ Backend PR Merged",
+              "title_link": "${{ github.event.pull_request.html_url }}",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Author", "value": "${{ github.event.pull_request.user.login }}", "short": true},
+                {"title": "Merged by", "value": "${{ github.actor }}", "short": true},
+                {"title": "Title", "value": "${{ github.event.pull_request.title }}", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Slack - Review Requested
+      if: github.event.action == 'review_requested'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":eyes:",
+            "attachments": [{
+              "color": "#ffcc00",
+              "title": "👀 Backend Code Review Requested",
+              "title_link": "${{ github.event.pull_request.html_url }}",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Author", "value": "${{ github.event.pull_request.user.login }}", "short": true},
+                {"title": "Reviewer", "value": "${{ github.event.requested_reviewer.login || 'Team review requested' }}", "short": true},
+                {"title": "Title", "value": "${{ github.event.pull_request.title }}", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [code-quality, security-scan, docker-security]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+    - name: Notify Slack - Deployment Started
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":gear:",
+            "attachments": [{
+              "color": "#ff7f0e",
+              "title": "⚙️ Backend Deployment Started",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                {"title": "Commit", "value": "${{ github.sha }}", "short": true},
+                {"title": "Author", "value": "${{ github.actor }}", "short": true}
+              ],
+              "footer": "GitHub Actions",
+              "ts": ${{ github.event.head_commit.timestamp }}
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        role-session-name: GitHub-Actions-Deploy
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build a docker container and push it to ECR
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Download task definition
+      run: |
+        aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query taskDefinition > task-definition.json
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: backend
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+
+    - name: Notify Slack - Deployment Success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":white_check_mark:",
+            "attachments": [{
+              "color": "good",
+              "title": "✅ Backend Deployment Successful!",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                {"title": "Environment", "value": "Production", "short": true},
+                {"title": "API URL", "value": "https://api.deployzen.live", "short": true},
+                {"title": "Image Tag", "value": "${{ github.sha }}", "short": true},
+                {"title": "ECS Service", "value": "${{ env.ECS_SERVICE }}", "short": true}
+              ],
+              "footer": "GitHub Actions",
+              "ts": ${{ github.event.head_commit.timestamp }}
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Slack - Deployment Failed
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":x:",
+            "attachments": [{
+              "color": "danger",
+              "title": "❌ Backend Deployment Failed!",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
+                {"title": "Workflow", "value": "${{ github.workflow }}", "short": true},
+                {"title": "ECS Service", "value": "${{ env.ECS_SERVICE }}", "short": true},
+                {"title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
+              ],
+              "footer": "GitHub Actions",
+              "ts": ${{ github.event.head_commit.timestamp }}
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build: .
+    container_name: book-author-api
+    ports:
+      - "3200:3200"
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=rootpassword
+      - DB_NAME=react_node_app
+      - PORT=3200
+    depends_on:
+      - mysql
+    networks:
+      - app-network
+
+  # MySQL Database Service
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=react_node_app
+    volumes:
+      - ./setup_db.sql:/docker-entrypoint-initdb.d/setup_db.sql:ro
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
