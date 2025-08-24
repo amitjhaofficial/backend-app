@@ -1,4 +1,4 @@
-# Docker Deployment Guide
+<!-- # Docker Deployment Guide
 
 This guide explains how to build and run the backend application using Docker.
 
@@ -212,4 +212,4 @@ cp .env.example .env
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-## 📚 References
+## 📚 References -->
