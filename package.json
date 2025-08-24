@@ -13,7 +13,6 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
-    "test": "echo \"Error: no test specified\" && exit 1",
     "serve": "pm2 start server.js --interpreter node"
   },
   "keywords": [],
