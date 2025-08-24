@@ -211,3 +211,5 @@ cp .env.example .env
 # Edit .env with production values
 docker-compose -f docker-compose.prod.yml up -d
 ```
+
+## 📚 References
