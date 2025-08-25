@@ -16,7 +16,7 @@ const db = mysql.createConnection({
   database: database,
   connectTimeout: 10000, // 10 seconds
   acquireTimeout: 10000,
-  reconnect: true
+  reconnect: true,
 });
 
 module.exports = db;
