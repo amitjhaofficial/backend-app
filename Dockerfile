@@ -18,6 +18,9 @@ RUN npm ci --only=production && \
 # Copy application code and set ownership
 COPY --chown=nodejs:nodejs . .
 
+# Create logs directory with proper permissions
+RUN mkdir -p logs && chown -R nodejs:nodejs logs
+
 # Switch to non-root user
 USER nodejs
 
