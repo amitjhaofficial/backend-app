@@ -15,8 +15,7 @@ const db = mysql.createConnection({
   password: password,
   database: database,
   connectTimeout: 10000, // 10 seconds
-  acquireTimeout: 10000,
-  reconnect: true,
+  // Removed deprecated options that cause warnings
 });
 
 module.exports = db;
