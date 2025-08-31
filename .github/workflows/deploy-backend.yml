@@ -42,6 +42,29 @@ jobs:
       run: npm run test:coverage
       continue-on-error: false
 
+    - name: Test health endpoints locally
+      run: |
+        # Start the application in background for health check testing
+        npm start &
+        APP_PID=$!
+        echo "Application started with PID: $APP_PID"
+        
+        # Wait for application to start (increased wait time for better reliability)
+        echo "Waiting for application to start..."
+        sleep 10
+        
+        # Test health endpoints
+        echo "Testing health endpoints..."
+        node test-health.js || {
+          echo "Health check tests failed"
+          kill $APP_PID 2>/dev/null || true
+          exit 1
+        }
+        
+        # Clean up
+        kill $APP_PID 2>/dev/null || true
+        echo "Health check tests completed successfully"
+
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
       with:
@@ -283,6 +306,40 @@ jobs:
         cluster: ${{ env.ECS_CLUSTER }}
         wait-for-service-stability: true
 
+    - name: Verify deployment health
+      run: |
+        echo "Verifying deployment health..."
+        
+        # Wait for deployment to stabilize
+        echo "Waiting for deployment to stabilize..."
+        sleep 30
+        
+        # Test health endpoints
+        echo "Testing production health endpoints..."
+        
+        # Test readiness endpoint
+        echo "Testing readiness endpoint..."
+        curl -f https://api.deployzen.live/ready --max-time 30 --retry 3 --retry-delay 10 || {
+          echo "Readiness check failed"
+          exit 1
+        }
+        
+        # Test main health endpoint
+        echo "Testing health endpoint..."
+        curl -f https://api.deployzen.live/health --max-time 30 --retry 3 --retry-delay 10 || {
+          echo "Health check failed"
+          exit 1
+        }
+        
+        # Test database health (may fail if DB is still connecting, so we allow it)
+        echo "Testing database health endpoint..."
+        curl -f https://api.deployzen.live/health/db --max-time 30 --retry 3 --retry-delay 10 || {
+          echo "Database health check failed - this may be temporary during startup"
+          echo "Continuing deployment as this is non-critical"
+        }
+        
+        echo "✅ Deployment health verification completed successfully"
+
     - name: Notify Slack - Deployment Success
       if: success()
       uses: 8398a7/action-slack@v3
@@ -301,6 +358,7 @@ jobs:
                 {"title": "Branch", "value": "${{ github.ref_name }}", "short": true},
                 {"title": "Environment", "value": "Production", "short": true},
                 {"title": "API URL", "value": "https://api.deployzen.live", "short": true},
+                {"title": "Health Status", "value": "✅ Verified", "short": true},
                 {"title": "Image Tag", "value": "${{ github.sha }}", "short": true},
                 {"title": "ECS Service", "value": "${{ env.ECS_SERVICE }}", "short": true}
               ],
@@ -329,6 +387,115 @@ jobs:
                 {"title": "Workflow", "value": "${{ github.workflow }}", "short": true},
                 {"title": "ECS Service", "value": "${{ env.ECS_SERVICE }}", "short": true},
                 {"title": "Run URL", "value": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  monitor-deployment:
+    name: Monitor Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy-backend]
+    if: always() && needs.deploy-backend.result == 'success'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        role-session-name: GitHub-Actions-Monitor
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Monitor ECS service health
+      run: |
+        echo "Monitoring ECS service health for 5 minutes..."
+        
+        for i in {1..10}; do
+          echo "Health check attempt $i/10"
+          
+          # Get service status
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].{running:runningCount,desired:desiredCount,pending:pendingCount}' \
+            --output text)
+          
+          echo "Service status: $SERVICE_STATUS"
+          
+          # Check if all tasks are running
+          RUNNING=$(echo $SERVICE_STATUS | cut -f1)
+          DESIRED=$(echo $SERVICE_STATUS | cut -f2)
+          PENDING=$(echo $SERVICE_STATUS | cut -f3)
+          
+          if [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq "0" ]; then
+            echo "✅ All tasks are running successfully"
+            
+            # Test health endpoints one more time
+            echo "Final health check..."
+            curl -f https://api.deployzen.live/health --max-time 30 || {
+              echo "⚠️ Health endpoint check failed during monitoring"
+              exit 1
+            }
+            
+            echo "🎉 Deployment monitoring completed successfully"
+            exit 0
+          fi
+          
+          echo "Waiting 30 seconds before next check..."
+          sleep 30
+        done
+        
+        echo "❌ Deployment monitoring timed out"
+        exit 1
+
+    - name: Notify Slack - Monitoring Success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":white_check_mark:",
+            "attachments": [{
+              "color": "good",
+              "title": "📊 Backend Deployment Monitoring Complete",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Service", "value": "${{ env.ECS_SERVICE }}", "short": true},
+                {"title": "Status", "value": "✅ Stable & Healthy", "short": true},
+                {"title": "Health Endpoint", "value": "https://api.deployzen.live/health", "short": false}
+              ],
+              "footer": "GitHub Actions"
+            }]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Slack - Monitoring Failed
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "channel": "#deployments",
+            "username": "GitHub Actions",
+            "icon_emoji": ":warning:",
+            "attachments": [{
+              "color": "warning",
+              "title": "⚠️ Backend Deployment Monitoring Issues",
+              "fields": [
+                {"title": "Repository", "value": "${{ github.repository }}", "short": true},
+                {"title": "Service", "value": "${{ env.ECS_SERVICE }}", "short": true},
+                {"title": "Issue", "value": "Service stability or health check problems", "short": true},
+                {"title": "Action Required", "value": "Manual investigation needed", "short": true}
               ],
               "footer": "GitHub Actions"
             }]
