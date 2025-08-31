@@ -14,22 +14,22 @@ app.use(bodyParser.json());
 app.get('/health', (req, res) => {
   try {
     logger.info('Health check endpoint accessed');
-    
+
     const healthCheck = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV || 'development',
-      version: process.env.npm_package_version || '1.0.0'
+      version: process.env.npm_package_version || '1.0.0',
     };
-    
+
     res.status(200).json(healthCheck);
   } catch (error) {
     logger.error('Health check failed:', error);
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -50,14 +50,14 @@ app.get('/health/db', (req, res) => {
           status: 'unhealthy',
           component: 'database',
           timestamp: new Date().toISOString(),
-          error: err.message
+          error: err.message,
         });
       }
-      
+
       res.status(200).json({
         status: 'healthy',
         component: 'database',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     });
   } catch (error) {
@@ -66,7 +66,7 @@ app.get('/health/db', (req, res) => {
       status: 'unhealthy',
       component: 'database',
       timestamp: new Date().toISOString(),
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -79,11 +79,11 @@ const dbRetryDelay = 5000; // 5 seconds
 
 function connectDatabase() {
   dbConnectionAttempts++;
-  
+
   db.connect((err) => {
     if (err) {
       logger.error(`Error connecting to MySQL (attempt ${dbConnectionAttempts}/${maxDbRetries}): ${err.stack}`);
-      
+
       if (dbConnectionAttempts < maxDbRetries) {
         logger.info(`Retrying database connection in ${dbRetryDelay / 1000} seconds...`);
         setTimeout(connectDatabase, dbRetryDelay);
@@ -104,3 +104,4 @@ connectDatabase();
 app.use('/api', routes);
 
 module.exports = app;
+

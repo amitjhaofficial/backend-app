@@ -9,33 +9,39 @@ function testEndpoint(path, name) {
       port: 3200,
       path: path,
       method: 'GET',
-      timeout: 5000
+      timeout: 5000,
     };
 
+    // eslint-disable-next-line no-console
     console.log(`\nTesting ${name} endpoint (${path})...`);
-    
+
     const req = http.request(options, (res) => {
       let data = '';
-      
+
       res.on('data', (chunk) => {
         data += chunk;
       });
-      
+
       res.on('end', () => {
+        // eslint-disable-next-line no-console
         console.log(`Status Code: ${res.statusCode}`);
         if (data) {
           try {
             const parsed = JSON.parse(data);
+            // eslint-disable-next-line no-console
             console.log('Response:', JSON.stringify(parsed, null, 2));
           } catch (e) {
+            // eslint-disable-next-line no-console
             console.log('Response:', data);
           }
         }
-        
+
         if (res.statusCode === 200) {
+          // eslint-disable-next-line no-console
           console.log(`✅ ${name} check PASSED`);
           resolve(true);
         } else {
+          // eslint-disable-next-line no-console
           console.log(`❌ ${name} check FAILED`);
           resolve(false);
         }
@@ -43,11 +49,13 @@ function testEndpoint(path, name) {
     });
 
     req.on('error', (error) => {
+      // eslint-disable-next-line no-console
       console.error(`❌ ${name} check ERROR:`, error.message);
       resolve(false);
     });
 
     req.on('timeout', () => {
+      // eslint-disable-next-line no-console
       console.error(`❌ ${name} check TIMEOUT`);
       req.destroy();
       resolve(false);
@@ -58,30 +66,39 @@ function testEndpoint(path, name) {
 }
 
 async function runAllTests() {
+  // eslint-disable-next-line no-console
   console.log('🏥 Starting Health Check Tests...\n');
-  
+
   const results = [];
-  
+
   // Test all endpoints
   results.push(await testEndpoint('/ready', 'Readiness'));
   results.push(await testEndpoint('/health', 'Application Health'));
   results.push(await testEndpoint('/health/db', 'Database Health'));
-  
+
+  // eslint-disable-next-line no-console
   console.log('\n' + '='.repeat(50));
+  // eslint-disable-next-line no-console
   console.log('📊 Test Results Summary:');
+  // eslint-disable-next-line no-console
   console.log('='.repeat(50));
-  
+
   const passed = results.filter(r => r).length;
   const total = results.length;
-  
+
+  // eslint-disable-next-line no-console
   console.log(`Total Tests: ${total}`);
+  // eslint-disable-next-line no-console
   console.log(`Passed: ${passed}`);
+  // eslint-disable-next-line no-console
   console.log(`Failed: ${total - passed}`);
-  
+
   if (passed === total) {
+    // eslint-disable-next-line no-console
     console.log('\n🎉 All health checks PASSED!');
     process.exit(0);
   } else {
+    // eslint-disable-next-line no-console
     console.log(`\n❌ ${total - passed} health check(s) FAILED!`);
     process.exit(1);
   }
@@ -89,6 +106,8 @@ async function runAllTests() {
 
 // Start tests
 runAllTests().catch(error => {
+  // eslint-disable-next-line no-console
   console.error('Test runner error:', error);
   process.exit(1);
 });
+
