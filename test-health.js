@@ -14,14 +14,14 @@ function testEndpoint(path, name) {
 
     // eslint-disable-next-line no-console
     console.log(`\nTesting ${name} endpoint (${path})...`);
-    
+
     const req = http.request(options, (res) => {
       let data = '';
-      
+
       res.on('data', (chunk) => {
         data += chunk;
       });
-      
+
       res.on('end', () => {
         // eslint-disable-next-line no-console
         console.log(`Status Code: ${res.statusCode}`);
@@ -35,7 +35,7 @@ function testEndpoint(path, name) {
             console.log('Response:', data);
           }
         }
-        
+
         if (res.statusCode === 200) {
           // eslint-disable-next-line no-console
           console.log(`✅ ${name} check PASSED`);
@@ -75,31 +75,31 @@ function testEndpoint(path, name) {
 async function runAllTests() {
   // eslint-disable-next-line no-console
   console.log('🏥 Starting Health Check Tests...\n');
-  
+
   const results = [];
-  
+
   // Test all endpoints
   results.push(await testEndpoint('/ready', 'Readiness'));
   results.push(await testEndpoint('/health', 'Application Health'));
   results.push(await testEndpoint('/health/db', 'Database Health'));
-  
+
   // eslint-disable-next-line no-console
   console.log('\n' + '='.repeat(50));
   // eslint-disable-next-line no-console
   console.log('📊 Test Results Summary:');
   // eslint-disable-next-line no-console
   console.log('='.repeat(50));
-  
+
   const passed = results.filter(r => r).length;
   const total = results.length;
-  
+
   // eslint-disable-next-line no-console
   console.log(`Total Tests: ${total}`);
   // eslint-disable-next-line no-console
   console.log(`Passed: ${passed}`);
   // eslint-disable-next-line no-console
   console.log(`Failed: ${total - passed}`);
-  
+
   // Note: Database health check failure is non-critical for local testing
   const criticalFailures = total - passed;
   if (criticalFailures === 0) {
